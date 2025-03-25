@@ -1,9 +1,13 @@
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
+    let Current_User = await getCurrentUser();
+
     let toggleSwitch = document.getElementById("toggleSwitch");
     let toggleText = document.getElementById("toggleText");
     let progressBar = document.getElementById("progressBar");
     let statusMessage = document.getElementById("statusMessage");
     let logData = await getData();
+    logData = logData.filter(item => item.Created_By.id === Current_User.id);
+
     let isCheckedIn = logData.length > 0 ? logData[0].checkincheckoutbaidu__Status === 'Checked-In' : false;
 
     if (isCheckedIn) {
@@ -22,7 +26,15 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
         progressBar.style.display = "none";
         toggleSwitch.disabled = false;
     }
-
+    async function getCurrentUser() {
+        try {
+            let res = await ZOHO.CRM.CONFIG.getCurrentUser();
+            if (!res) throw new Error(res);
+            return res.users[0];
+        } catch (error) {
+            throw new Error(error);
+        }
+    }
     async function getData() {
         try {
             let response = await ZOHO.CRM.API.getAllRecords({ Entity: "checkincheckoutbaidu__Attendance", page: 1 });
@@ -71,7 +83,10 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
     async function updateRecord(lat, long, time) {
         let latestRecords = await getData();
-        let check_in_time = new Date(latestRecords[0].checkincheckoutbaidu__Check_In_Time);
+
+        let FilteredRecords = latestRecords.filter(item => item.Created_By.id === Current_User.id);
+
+        let check_in_time = new Date(FilteredRecords[0].checkincheckoutbaidu__Check_In_Time);
         let duration = new Date(time).getTime() - check_in_time.getTime();
 
         // Convert the duration from milliseconds to hours, minutes, and seconds
@@ -85,7 +100,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
         let config = {
             Entity: "checkincheckoutbaidu__Attendance",
             APIData: {
-                "id": latestRecords[0].id,
+                "id": FilteredRecords[0].id,
                 "checkincheckoutbaidu__Check_out_Latitude": `${lat}`,
                 "checkincheckoutbaidu__Check_out_Longitude": `${long}`,
                 "checkincheckoutbaidu__Check_out_Time": `${time}`,
@@ -108,6 +123,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     async function updateTable() {
         const tableBody = document.getElementById("tableBody");
         logData = await getData();
+        logData = logData.filter(item => item.Created_By.id === Current_User.id);
         tableBody.innerHTML = logData.length ? logData.map((entry, index) => `
                 <tr>
                     <td>${index + 1}</td>
@@ -118,10 +134,10 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
                     <td>${entry.checkincheckoutbaidu__Check_out_Time}</td>
                     <td>${entry.checkincheckoutbaidu__Check_out_Latitude}</td>
                     <td>${entry.checkincheckoutbaidu__Check_out_Longitude}</td>
-                    <td>${entry.checkincheckoutbaidu__Duration} </td>
-                </tr>
-            `).join('') : `<tr class="no-records"><td colspan="9">No records found</td></tr>`;
+                    </tr>
+                    `).join('') : `<tr class="no-records"><td colspan="11">No records found</td></tr>`;
     }
+    // <td>${entry.checkincheckoutbaidu__Duration} </td>
     document.querySelector('#toggleSwitch').addEventListener('change', toggleCheckInOut);
     async function toggleCheckInOut() {
         showLoading();
