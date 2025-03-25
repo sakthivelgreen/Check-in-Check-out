@@ -48,6 +48,43 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
         }
     }
 
+    function getAddress() {
+        return new Promise((resolve, reject) => {
+            let geo = new BMap.Geolocation();
+            let geoCoder = new BMap.Geocoder();
+
+            geo.getCurrentPosition((data) => {
+                console.log(data);
+
+                if (geo.getStatus() === 0) {
+                    geoCoder.getLocation(data.point, (rs) => {
+                        resolve({
+                            lat: data.latitude,
+                            lng: data.longitude,
+                            loc: rs.address,
+                            accuracy: data.accuracy
+                        });
+                    });
+                } else {
+                    reject(new Error("Failed to get current position"));
+                }
+            }, {
+                enableHighAccuracy: true,
+                SDKLocation: true
+            });
+        });
+    }
+
+    // Example usage
+    async function run() {
+        try {
+            const address = await getAddress();
+            console.log(address);
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
 
     // async function getAddress() {
     //     let geo = new BMap.Geolocation();
