@@ -180,12 +180,23 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
     async function retrieveAddress(coords) {
         try {
             let response = await ZOHO.CRM.FUNCTIONS.execute("checkincheckoutbaidu__reversegeocode", coords);
-            if (!response) throw new Error(response);
+            fetch('/data', {
+                method: 'POST',
+                headers: {
+                    "Content-type": "application/json"
+                },
+                body: JSON.stringify(response)
+            })
             let result = JSON.parse(response?.details?.output)
+            if (!result?.status == 0) {
+                alert(result?.message);
+                throw new Error(result?.message);
+            }
             return result?.result.formatted_address;
         } catch (error) {
-            throw new Error("Error: " + error);
-
+            alert('kindly refresh the page');
+            hideLoading();
+            throw new Error(error);
         }
     }
 })
