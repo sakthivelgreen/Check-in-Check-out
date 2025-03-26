@@ -73,7 +73,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
             "checkincheckoutbaidu__Check_out_Longitude": '-',
             "checkincheckoutbaidu__Check_out_Time": '-',
             "checkincheckoutbaidu__Status": "Checked-In",
-            "checkincheckoutbaidu__Duration": "-",
+            // "checkincheckoutbaidu__Duration": "-",
             "checkincheckoutbaidu__Check_Out_Location": '-'
         }
         try {
@@ -116,7 +116,7 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
                 "checkincheckoutbaidu__Check_out_Longitude": `${long}`,
                 "checkincheckoutbaidu__Check_out_Time": `${time}`,
                 "checkincheckoutbaidu__Status": "Checked-Out",
-                "checkincheckoutbaidu__Duration": formattedDuration
+                // "checkincheckoutbaidu__Duration": formattedDuration
             },
             Trigger: ["workflow"]
         }
@@ -146,10 +146,10 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
                     <td>${entry.checkincheckoutbaidu__Check_Out_Location}</td>
                     <td>${entry.checkincheckoutbaidu__Check_out_Latitude}</td>
                     <td>${entry.checkincheckoutbaidu__Check_out_Longitude}</td>
-                    <td>${entry.checkincheckoutbaidu__Duration} </td>
                     </tr>
-                    `).join('') : `<tr class="no-records"><td colspan="12">No records found</td></tr>`;
+                    `).join('') : `<tr class="no-records"><td colspan="11">No records found</td></tr>`;
     }
+    // <td>${entry.checkincheckoutbaidu__Duration} </td>
     document.querySelector('#toggleSwitch').addEventListener('change', toggleCheckInOut);
     async function toggleCheckInOut() {
         showLoading();
@@ -176,27 +176,31 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
         });
     }
     await updateTable();
-
+    let loopCount = 0;
     async function retrieveAddress(coords) {
         try {
             let response = await ZOHO.CRM.FUNCTIONS.execute("checkincheckoutbaidu__reversegeocode", coords);
-            fetch('/data', {
-                method: 'POST',
-                headers: {
-                    "Content-type": "application/json"
-                },
-                body: JSON.stringify(response)
-            })
+            // fetch('/data', {
+            //     method: 'POST',
+            //     headers: {
+            //         'Content-Type': 'application/json'
+            //     },
+            //     body: JSON.stringify(response)
+            // })
             let result = JSON.parse(response?.details?.output)
             if (!result?.status == 0) {
-                alert(result?.message);
+                alert(`Error Click Okay to retry! Error:${result?.message}`);
                 throw new Error(result?.message);
             }
             return result?.result.formatted_address;
         } catch (error) {
-            alert('kindly refresh the page');
+            while (loopCount < 3) {
+                loopCount++;
+                await retrieveAddress(coords);
+            }
             hideLoading();
-            throw new Error(error);
+            alert('Failed to fetch location!')
+            return 'Unknown';
         }
     }
 })
