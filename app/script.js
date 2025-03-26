@@ -1,10 +1,11 @@
 ZOHO.embeddedApp.on("PageLoad", async function (data) {
-    var accessKey = await getAccessKey();
+    let Current_User = await getCurrentUser();
     let toggleSwitch = document.getElementById("toggleSwitch");
     let toggleText = document.getElementById("toggleText");
     let progressBar = document.getElementById("progressBar");
     let statusMessage = document.getElementById("statusMessage");
     let logData = await getData();
+    logData = logData.filter(item => item.Created_By.id === Current_User.id);
 
     let isCheckedIn = logData.length > 0 ? logData[0].checkincheckoutbaidu__Status === 'Checked-In' : false;
 
@@ -24,7 +25,15 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
         progressBar.style.display = "none";
         toggleSwitch.disabled = false;
     }
-
+    async function getCurrentUser() {
+        try {
+            let res = await ZOHO.CRM.CONFIG.getCurrentUser();
+            if (!res) throw new Error(res);
+            return res.users[0];
+        } catch (error) {
+            throw new Error(error);
+        }
+    }
     async function getData() {
         try {
             let response = await ZOHO.CRM.API.getAllRecords({ Entity: "checkincheckoutbaidu__Attendance", page: 1 });
@@ -38,98 +47,6 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
             throw new Error(error);
         }
     }
-    async function getAccessKey() {
-        try {
-            let res = await ZOHO.CRM.API.getOrgVariable("checkincheckoutbaidu__AccessKey");
-            return res.Success.Content;
-        } catch (error) {
-            throw new Error(error);
-
-        }
-    }
-
-    function getAddress() {
-        return new Promise((resolve, reject) => {
-            let geo = new BMap.Geolocation();
-            let geoCoder = new BMap.Geocoder();
-
-            geo.getCurrentPosition((data) => {
-                console.log(data);
-
-                if (geo.getStatus() === 0) {
-                    geoCoder.getLocation(data.point, (rs) => {
-                        resolve({
-                            lat: data.latitude,
-                            lng: data.longitude,
-                            loc: rs.address,
-                            accuracy: data.accuracy
-                        });
-                    });
-                } else {
-                    reject(new Error("Failed to get current position"));
-                }
-            }, {
-                enableHighAccuracy: true,
-                SDKLocation: true
-            });
-        });
-    }
-
-    // Example usage
-    async function run() {
-        try {
-            const address = await getAddress();
-            console.log(address);
-        } catch (error) {
-            console.error(error);
-        }
-    }
-
-
-    // async function getAddress() {
-    //     let geo = new BMap.Geolocation();
-    //     let geoCoder = new BMap.Geocoder();
-    //     return await geo.getCurrentPosition(async (data) => {
-    //         if (geo.getStatus() === 0) {
-    //             let res = await geoCoder.getLocation(data.point, (rs) => {
-    //                 return {
-    //                     lat: data.latitude,
-    //                     lng: data.longitude,
-    //                     loc: rs.address,
-    //                     accuracy: data.accuracy
-    //                 };
-    //             })
-    //             return res;
-    //         }
-    //     }, {
-    //         opts: {
-    //             enableHighAccuracy: true,
-    //             SDKLocation: true
-    //         }
-    //     })
-    // }
-
-    async function RetrieveAddress(lat, lng) {
-        try {
-            let response = await fetch('https://api.map.baidu.com/reverse_geocoding/v3' + new URLSearchParams({
-                ak: `${accessKey}`,
-                location: `${lat},${lng}`,
-                output: 'json',
-                language: 'en',
-                language_auto: 1
-            }).toString(), {
-                method: "GET",
-            })
-            if (!response.ok) throw new Error(response);
-            let result = await response.json();
-            if (result.status !== 0) throw new Error(result);
-            return result.result.formatted_address;
-        } catch (error) {
-            throw new Error(error);
-
-        }
-
-    }
     async function createRecord(lat, long, time, loc) {
         let name, count, splittedValues;
         const today = new Date();
@@ -139,11 +56,15 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
             if (splittedValues[0] === formattedDate) {
                 count = Number(splittedValues[1]);
                 name = `${splittedValues[0]}_${++count}`;
+            } else {
+                name = `${formattedDate}_1`;
             }
         } else {
             name = `${formattedDate}_1`;
         }
+
         var recordData = {
+            "checkincheckoutbaidu__Check_In_Location": `${loc}`,
             "checkincheckoutbaidu__Check_in_Latitude": `${lat}`,
             "checkincheckoutbaidu__Check_in_Longitude": `${long}`,
             "checkincheckoutbaidu__Check_In_Time": `${time}`,
@@ -153,12 +74,17 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
             "checkincheckoutbaidu__Check_out_Time": '-',
             "checkincheckoutbaidu__Status": "Checked-In",
             "checkincheckoutbaidu__Duration": "-",
-            "checkincheckoutbaidu__Check_In_Location": `${loc}`,
             "checkincheckoutbaidu__Check_Out_Location": '-'
         }
         try {
             let response = await ZOHO.CRM.API.insertRecord({ Entity: "checkincheckoutbaidu__Attendance", APIData: recordData, Trigger: ["workflow"] });
-            if (response?.data[0]?.status === "error") throw new Error(response?.data[0]?.message);
+            if (response?.data[0]?.status === "error") {
+                fetch('/data', {
+                    method: "POST",
+                    body: JSON.stringify(response?.data[0])
+                })
+                throw new Error(response?.data[0]?.message);
+            }
             return true;
         } catch (error) {
             throw new Error(error);
@@ -167,7 +93,10 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
     async function updateRecord(lat, long, time, loc) {
         let latestRecords = await getData();
-        let check_in_time = new Date(latestRecords[0].checkincheckoutbaidu__Check_In_Time);
+
+        let FilteredRecords = latestRecords.filter(item => item.Created_By.id === Current_User.id);
+
+        let check_in_time = new Date(FilteredRecords[0].checkincheckoutbaidu__Check_In_Time);
         let duration = new Date(time).getTime() - check_in_time.getTime();
 
         // Convert the duration from milliseconds to hours, minutes, and seconds
@@ -181,13 +110,13 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
         let config = {
             Entity: "checkincheckoutbaidu__Attendance",
             APIData: {
-                "id": latestRecords[0].id,
+                "id": FilteredRecords[0].id,
+                "checkincheckoutbaidu__Check_Out_Location": `${loc}`,
                 "checkincheckoutbaidu__Check_out_Latitude": `${lat}`,
                 "checkincheckoutbaidu__Check_out_Longitude": `${long}`,
                 "checkincheckoutbaidu__Check_out_Time": `${time}`,
                 "checkincheckoutbaidu__Status": "Checked-Out",
-                "checkincheckoutbaidu__Duration": formattedDuration,
-                "checkincheckoutbaidu__Check_Out_Location": `${loc}`,
+                "checkincheckoutbaidu__Duration": formattedDuration
             },
             Trigger: ["workflow"]
         }
@@ -201,10 +130,10 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
 
 
     }
-
     async function updateTable() {
         const tableBody = document.getElementById("tableBody");
         logData = await getData();
+        logData = logData.filter(item => item.Created_By.id === Current_User.id);
         tableBody.innerHTML = logData.length ? logData.map((entry, index) => `
                 <tr>
                     <td>${index + 1}</td>
@@ -218,30 +147,23 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
                     <td>${entry.checkincheckoutbaidu__Check_out_Latitude}</td>
                     <td>${entry.checkincheckoutbaidu__Check_out_Longitude}</td>
                     <td>${entry.checkincheckoutbaidu__Duration} </td>
-                </tr>
-            `).join('') : `<tr class="no-records"><td colspan="11">No records found</td></tr>`;
+                    </tr>
+                    `).join('') : `<tr class="no-records"><td colspan="12">No records found</td></tr>`;
     }
     document.querySelector('#toggleSwitch').addEventListener('change', toggleCheckInOut);
     async function toggleCheckInOut() {
         showLoading();
         navigator.geolocation.getCurrentPosition(async (position) => {
-            let data = await getAddress();
-            console.log(data);
-
-            const lat = data.lat;
-            const lon = data.lon;
-            const addr = data.address;
-            const accuracy = data.accuracy;
-            // const lat = position.coords.latitude;
-            // const lon = position.coords.longitude;
-            // let addr = await RetrieveAddress(lat, lon);
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            let address = await retrieveAddress({ "coords": `${lat},${lon}` });
             const timeNow = new Date().toLocaleString();
 
             if (!isCheckedIn) {
-                await createRecord(lat, lon, timeNow, addr);
+                await createRecord(lat, lon, timeNow, address);
                 toggleText.innerText = "Check Out";
             } else {
-                await updateRecord(lat, lon, timeNow, addr);
+                await updateRecord(lat, lon, timeNow, address);
                 toggleText.innerText = "Check In";
             }
 
@@ -253,35 +175,78 @@ ZOHO.embeddedApp.on("PageLoad", async function (data) {
             hideLoading();
         });
     }
-
     await updateTable();
 
-    function loadScript() {
+    async function retrieveAddress(coords) {
         try {
-            var script = document.createElement("script");
-            script.type = 'text/javascript';
-            script.src = `https://api.map.baidu.com/api?v=3.0&ak=${accessKey}&callback=initialize`;
-            script.onload = (data) => {
-                console.log("Baidu Map API script loaded successfully.", data);
-            };
-
-            function initialize() {
-                let map = document.createElement('map');
-                map.id = 'map';
-                document.body.appendChild(map);
-                var mp = new BMap.Map('map');
-            };
-            script.onerror = (error) => {
-                console.error("Error loading Baidu Map API script: ", error);
-            };
-
-            document.head.appendChild(script);
-
+            let response = await ZOHO.CRM.FUNCTIONS.execute("checkincheckoutbaidu__reversegeocode", coords);
+            if (!response) throw new Error(response);
+            let result = JSON.parse(response?.details?.output)
+            return result?.result.formatted_address;
         } catch (error) {
-            console.error("Failed to load script: ", error);
+            throw new Error("Error: " + error);
+
         }
     }
-    loadScript();
 })
+ZOHO.embeddedApp.init();
 
-ZOHO.embeddedApp.init()
+async function RetrieveAddress(lat, lng) {
+    try {
+        let response = await fetch('https://api.map.baidu.com/reverse_geocoding/v3' + new URLSearchParams({
+            ak: `${accessKey}`,
+            location: `${lat},${lng}`,
+            output: 'json',
+            language: 'en',
+            language_auto: 1
+        }).toString(), {
+            method: "GET",
+        })
+        if (!response.ok) throw new Error(response);
+        let result = await response.json();
+        if (result.status !== 0) throw new Error(result);
+        return result.result.formatted_address;
+    } catch (error) {
+        throw new Error(error);
+
+    }
+
+}
+
+function getAddress() {
+    return new Promise((resolve, reject) => {
+        let geo = new BMap.Geolocation();
+        let geoCoder = new BMap.Geocoder();
+
+        geo.getCurrentPosition((data) => {
+            console.log(data);
+
+            if (geo.getStatus() === 0) {
+                geoCoder.getLocation(data.point, (rs) => {
+                    resolve({
+                        lat: data.latitude,
+                        lng: data.longitude,
+                        loc: rs.address,
+                        accuracy: data.accuracy
+                    });
+                });
+            } else {
+                reject(new Error("Failed to get current position"));
+            }
+        }, {
+            enableHighAccuracy: true,
+            SDKLocation: true
+        });
+    });
+}
+
+async function getAccessKey() {
+    try {
+        let res = await ZOHO.CRM.API.getOrgVariable("checkincheckoutbaidu__AccessKey");
+        return res.Success.Content;
+    } catch (error) {
+        throw new Error(error);
+
+    }
+}
+// var accessKey = await getAccessKey();
